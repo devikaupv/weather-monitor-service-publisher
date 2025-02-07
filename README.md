@@ -8,9 +8,7 @@ In this service, the publish-subscribe (pub-sub) messaging pattern is implemente
 Publisher Role: The Weather Monitor Service is the publisher that collects weather data (temperature and precipitation) from the OpenMeteo API. It then filters the data based on specific conditions (e.g., temperature below 5°C or precipitation above 30mm). Once filtered, the service publishes relevant weather alerts to specific message queues (topics).
 
 Message Queues: The alerts are pushed to two topics:
-
 weather.alerts.temperature
-
 weather.alerts.precipitation
 
 **Solution Design:**

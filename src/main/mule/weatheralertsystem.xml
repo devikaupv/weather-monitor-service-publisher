@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+    xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+ 
+    <configuration-properties doc:name="Configuration properties" file="config.yaml"/>
+    
+    <http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration">
+        <http:request-connection protocol="HTTPS" />
+    </http:request-config>
+	<jms:config name="JMS_Config" doc:name="JMS Config" doc:id="0aedfd1c-fc26-4f37-a808-d73867dd56b7" >
+		<jms:active-mq-connection username="admin" password="admin" >
+			<jms:factory-configuration brokerUrl="tcp://localhost:61616" />
+		</jms:active-mq-connection>
+	</jms:config>
+	<flow name="temperatureAlertFlow" doc:id="7b7ec21e-fbe7-423f-b8b0-c05dcc4ebe93" >
+        <scheduler doc:name="Scheduler">
+            <scheduling-strategy>
+                <fixed-frequency frequency="30" timeUnit="MINUTES"/>
+            </scheduling-strategy>
+        </scheduler>
+        <foreach doc:name="For Each City" collection="#[(p('weather.cities') default '') splitBy ',']">
+            <set-variable variableName="cityIndex" value="#[p('weather.cities') splitBy ',' indexOf(payload)]"/>
+            <set-variable variableName="cityName" value="#[payload]"/>
+            <set-variable variableName="latitude" value="#[(p('weather.latitudes') splitBy ',')[vars.cityIndex] as Number]"/>
+            <set-variable variableName="longitude" value="#[(p('weather.longitudes') splitBy ',')[vars.cityIndex] as Number]"/>
+            <http:request method="GET" url="#[p('openMeteoApi.baseUrl') ++ '?latitude=' ++ vars.latitude ++ '&amp;longitude=' ++ vars.longitude ++ '&amp;hourly=temperature_2m']" config-ref="HTTP_Request_configuration"/>
+            
+            <logger level="INFO" doc:name="Logger" doc:id="8de0f2b9-7911-4221-8d16-517cdb6c20aa" message="Temperature API Response for #[vars.cityName]: #[payload]" category="com.demo.weatheralertsystem.get-temperatureAlertFlow.#1"/>
+			<ee:transform doc:name="Extract Weather Data for Temperature">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var temperatures = payload.hourly.temperature_2m
+var times = payload.hourly.time
+---
+{
+    city: vars.cityName,
+    message: "The temperature is below 5!",
+    data: (temperatures zip times)
+        filter ((tempTime) -> tempTime[0] as Number < 5)
+        map ((tempTime) -> {
+            temperature: tempTime[0] default 999,
+            time: tempTime[1] default ""
+        })
+}]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+            <logger level="INFO" message="Transformed Temperature Alert for #[vars.cityName]: #[payload]" category="com.demo.weatheralertsystem.get-temperatureAlertFlow.#2"/>
+			<jms:publish doc:name="Publish" doc:id="e11073cd-aefa-4081-89d0-108403d0558d" destination="weather.alerts.temperature" config-ref="JMS_Config"/>
+			<logger level="INFO" doc:name="Logger" doc:id="4ddd0aaf-2cf0-4dd6-b406-b23acfb79531" message="Message published to queue: weather.alerts.temperature for #[vars.cityName]" category="com.demo.weatheralertsystem.get-temperatureAlertFlow.#3"/>
+        
+</foreach>
+		<error-handler ref="commonsError_Handler" />
+    
+</flow>
+    
+    <flow name="precipitationAlertFlow" doc:id="d1d37ecd-ce94-43c6-84ad-03bf01e4e3e7" >
+        <scheduler doc:name="Scheduler">
+            <scheduling-strategy>
+                <fixed-frequency frequency="30" timeUnit="MINUTES"/>
+            </scheduling-strategy>
+        </scheduler>
+        <foreach doc:name="For Each City" collection="#[(p('weather.cities') default '') splitBy ',']">
+            <set-variable variableName="cityIndex" value="#[p('weather.cities') splitBy ',' indexOf(payload)]"/>
+            <set-variable variableName="cityName" value="#[payload]"/>
+            <set-variable variableName="latitude" value="#[(p('weather.latitudes') splitBy ',')[vars.cityIndex] as Number]"/>
+            <set-variable variableName="longitude" value="#[(p('weather.longitudes') splitBy ',')[vars.cityIndex] as Number]"/>
+            <set-variable variableName="precipitationThreshold" value="#[p('alerts.precipitationThreshold') as Number]"/>
+            <http:request method="GET" url="#[p('openMeteoApi.baseUrl') ++ '?latitude=' ++ vars.latitude ++ '&amp;longitude=' ++ vars.longitude ++ '&amp;hourly=precipitation_probability']" config-ref="HTTP_Request_configuration"/>
+            
+            <logger level="INFO" doc:name="Logger" doc:id="311d3288-2fa5-4d8c-bdb2-dffdc81ea8cd" message="Precipitation API Response for #[vars.cityName]: #[payload]" category="com.demo.weatheralertsystem.get-precipitationAlertFlow.#1"/>
+			<ee:transform doc:name="Extract Weather Data for Precipitation">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var precipProbabilities = payload.hourly.precipitation_probability
+var times = payload.hourly.time
+---
+{
+    city: vars.cityName,
+    message: "It is very likely to rain!",
+    data: (precipProbabilities zip times)
+        filter ((precipTime) -> precipTime[0] as Number > vars.precipitationThreshold)
+        map ((precipTime) -> {
+            precipitation_probability: precipTime[0] default 0.0,
+            time: precipTime[1] default ""
+        })
+}]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+            <logger level="INFO" message="Transformed Precipitation Alert for #[vars.cityName]: #[payload]" category="com.demo.weatheralertsystem.get-precipitationAlertFlow.#2"/>
+			<jms:publish doc:name="Publish" doc:id="4caa4968-af47-442c-804a-f27ebfea711a" destination="weather.alerts.precipitation" config-ref="JMS_Config"/>
+			<logger level="INFO" doc:name="Logger" doc:id="e5d336d2-1b98-4e18-94b6-978dff22956e" message="Message published to queue: weather.alerts.precipitation for #[vars.cityName]" category="com.demo.weatheralertsystem.get-precipitationAlertFlow.#3"/>
+        
+</foreach>
+		<error-handler ref="commonsError_Handler" />
+    
+</flow>
+</mule>

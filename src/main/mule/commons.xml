@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core 
+        http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <!-- Set Global Error Handler -->
+    <configuration defaultErrorHandler-ref="commonsError_Handler" />
+
+    <!-- Global Error Handler -->
+    <error-handler name="commonsError_Handler">
+        
+        <!-- Handles HTTP Timeout Errors -->
+        <on-error-propagate type="HTTP:TIMEOUT">
+            <set-variable variableName="errorDetails" 
+                value="#['HTTP Timeout in ' ++ (app.recordedEvent.flowName default 'Unknown Flow') ++ ': ' ++ (error.description default 'No Description')]" />
+            <logger level="ERROR" message="Timeout Issue - #[vars.errorDetails]" />
+            <!-- Call sendErrorAlertFlow to send an alert when timeout error occurs -->
+            <flow-ref name="sendErrorAlertFlow" />
+        </on-error-propagate>
+
+        <!-- Handles HTTP Connectivity Errors -->
+        <on-error-propagate type="HTTP:CONNECTIVITY">
+            <set-variable variableName="errorDetails" 
+                value="#['HTTP Connectivity Issue in ' ++ (app.recordedEvent.flowName default 'Unknown Flow') ++ ': ' ++ (error.description default 'No Description')]" />
+            <logger level="ERROR" message="Connectivity Issue - #[vars.errorDetails]" />
+            <!-- Call sendErrorAlertFlow to send an alert when connectivity error occurs -->
+            <flow-ref name="sendErrorAlertFlow" />
+        </on-error-propagate>
+
+        <on-error-propagate type="ANY">
+        <set-variable variableName="errorDetails" 
+            value="#['Unexpected Error in ' ++ (app.recordedEvent.flowName default 'Unknown Flow') ++ ': ' ++ (error.description default 'No Description')]" />
+        <logger level="ERROR" message="Unhandled Issue - #[vars.errorDetails]" />
+        <!-- Add logic to decide if this should trigger an alert -->
+        <flow-ref name="sendErrorAlertFlow" />
+    </on-error-propagate>
+
+    </error-handler>
+
+    <!-- Flow to Send Alerts (Only called for unexpected errors) -->
+    <flow name="sendErrorAlertFlow">
+        <logger level="ERROR" message="Error Alert: Flow Name - #[app.recordedEvent.flowName default 'Unknown Flow'], Error Type - #[error.errorType default 'Unknown Error'], Description - #[error.description default 'No Description']" />
+    </flow>
+
+</mule>
+

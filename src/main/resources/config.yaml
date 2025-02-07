@@ -1,0 +1,11 @@
+weather:
+  cities: "London,Paris,New York,Tokyo,Berlin"
+  latitudes: "51.5074,48.8566,40.7128,35.6762,52.52"
+  longitudes: "-0.1278,2.3522,-74.0060,139.6503,13.41"
+
+alerts:
+  temperatureThreshold: "5"
+  precipitationThreshold: "30"
+
+openMeteoApi:
+  baseUrl: "https://api.open-meteo.com/v1/forecast"
